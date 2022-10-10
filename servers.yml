@@ -1,124 +1,192 @@
-Description: >
- Udacity Nanodegree Project / IAC with CloudFormation / 2022
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template creates stack for servers, auto scaling group and loadbalancers in AWS
+
 
 Parameters:
- EnvironmentName:
-     Description: An environment name that will be prefixed to resource names
-     Type: String
+    EnvironmentName:
+        Description: Environment name for resources to be created
+        Type: String
+    
+    AMiID:
+        Description: AMI ID for Ubuntu 18.04
+        Type: String
 
-Resources:
-  LBSecGroup:
+    InstanceType:
+        Description: Server type
+        Type: String
+
+    InstanceMinSize:
+        Description: Min server count for AutoScaling
+        Type: String
+
+    InstanceMaxSize:
+        Description: Max server count for AutoScaling
+        Type: String
+
+
+Resources: 
+#Create IAM Role and Policy
+  EC2S3AllowRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ec2.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+  
+  RolePolicies: 
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: "EC2S3Allow"
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Action: "*"
+            Resource: "*"
+      Roles: 
+        - Ref: "EC2S3AllowRole"
+
+#Create Instance Profile to attach to Launch Configuration
+  EC2S3InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+      - Ref: EC2S3AllowRole
+
+
+#Create  security group for Application Load Balancer (ALB)
+  ALBSecGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow http to our load balancer
+      GroupName: ALBSecurityGroup
+      GroupDescription: Allow inbound anywhere to Load Balancer
       VpcId:
         Fn::ImportValue:
-          !Sub "${EnvironmentName}-VPCID"
+            !Sub "${EnvironmentName}-VPCID"
+      
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
+      
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ALBSecGroup
 
+#Create  security group Web Servers
   WebServerSecGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow http to our hosts and SSH from local only
+      GroupName: WebServersSecurityGroup
+      GroupDescription: Alllow inbound traffic only from load balancer
       VpcId:
-        Fn::ImportValue: 
+        Fn::ImportValue:
           !Sub "${EnvironmentName}-VPCID"
+      
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
+      
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 0
           ToPort: 65535
           CidrIp: 0.0.0.0/0
+      
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-WebServerSecGroup
 
+
+#Create Launch Configuration for Auto scaling Group with AMI and Instance type
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          sudo apt-get update -y
-          sudo apt-get install apache2 -y
-          systemctl enable httpd
+          apt-get update -y
+          apt-get install apache2 -y
           systemctl start apache2.service
           cd /var/www/html
-          echo "<p> Welcome to ChisomJude Demo Project </p>" > index.html
-      ImageId: ami-088c153f74339f34c
+          echo "<h1>Welcome Here, This is a Simple Page from Chisom Jude</h1>" > index.html
+          systemctl reload apache2.service
+      ImageId: !Ref AMiID
+      IamInstanceProfile: !Ref EC2S3InstanceProfile
       SecurityGroups:
-        - Ref: WebServerSecGroup
-      InstanceType: t3.meduim
+      - Ref: WebServerSecGroup
+      InstanceType: !Ref InstanceType
       BlockDeviceMappings:
-        - DeviceName: "/dev/sdk"
-          Ebs:
-            VolumeSize: "10"
-      
+      - DeviceName: "/dev/sdk"
+        Ebs:
+          VolumeSize: '10'
 
-  WebAppGroup:
+#Create Auto Scaling Group with desired server count
+  WebAppASGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       VPCZoneIdentifier:
-        - Fn::ImportValue: 
-            !Sub "${EnvironmentName}-PRIVATE-NETS"
+      - Fn::ImportValue: 
+          !Sub "${EnvironmentName}-PRIV-NETS"
       LaunchConfigurationName:
         Ref: WebAppLaunchConfig
-      MinSize: "4"
-      MaxSize: "6"
+      MinSize: !Ref InstanceMinSize
+      MaxSize: !Ref InstanceMaxSize
       TargetGroupARNs:
-        - Ref: WebAppTargetGroup
+      - Ref: WebAppTargetGroup
 
-  WebAppLB:
+#Create Application Load Balancer and listener rule for ALB
+  WebAppALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Subnets:
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1A-SN001"
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1A-SN002"
+      - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1-SN"
+      - Fn::ImportValue: !Sub "${EnvironmentName}-PUB2-SN"
       SecurityGroups:
-        - Ref: LBSecGroup
-
-  Listener:
+      - Ref: ALBSecGroup
+  
+  ALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
-        - Type: forward
-          TargetGroupArn:
-            Ref: WebAppTargetGroup
-      LoadBalancerArn:
-        Ref: WebAppLB
-      Port: "80"
+      - Type: forward
+        TargetGroupArn:
+          Ref: WebAppTargetGroup
+      LoadBalancerArn: 
+        Ref: WebAppALB
+      Port: '80'
       Protocol: HTTP
-
+  
   ALBListenerRule:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Properties:
-      Actions:
+      Type: AWS::ElasticLoadBalancingV2::ListenerRule
+      Properties:
+        Actions:
         - Type: forward
-          TargetGroupArn: !Ref "WebAppTargetGroup"
-      Conditions:
+          TargetGroupArn: !Ref WebAppTargetGroup
+        Conditions:
         - Field: path-pattern
           Values: [/]
-      ListenerArn: !Ref "Listener"
-      Priority: 1
-
+        ListenerArn: !Ref ALBListener
+        Priority: 1
+  
+  #Create Target Group to attach to Load Balancer
   WebAppTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -130,13 +198,12 @@ Resources:
       Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 5
-      VpcId:
+      VpcId: 
         Fn::ImportValue:
           Fn::Sub: "${EnvironmentName}-VPCID"
 
+#Desired Output of Resources Created
 Outputs:
-  WebAppLBDNSName:
-    Description: Public URL of the load balancer
-    Value: !Join ["", ["http://", !GetAtt WebAppLB.DNSName]]
-    Export:
-      Name: !Sub ${EnvironmentName}-LB-DNSName
+    ALBUrl:
+        Description: A reference to the DNS name of the Application Load Balancer
+        Value: !Join [ "", [ http://, !GetAtt WebAppALB.DNSName ]]

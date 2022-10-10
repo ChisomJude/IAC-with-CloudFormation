@@ -1,7 +1,23 @@
-[
+[	
     {
-        "ParameterKey": "EnvironmentName",
-        "ParameterValue": "ChisomJudeProject"
-    }
-   
-   ]
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "ChisomJudeProject"
+    },
+	{
+		"ParameterKey": "AMiID",
+		"ParameterValue": "ami-005de95e8ff495156"
+	},
+	{
+		"ParameterKey": "InstanceType",
+		"ParameterValue": "t2.medium"
+	},
+	{
+		"ParameterKey": "InstanceMinSize",
+		"ParameterValue": "4"
+	},
+	{
+		"ParameterKey": "InstanceMaxSize",
+		"ParameterValue": "6"
+	}
+
+]

@@ -1,1 +1,2 @@
+#Here is a Cmdlet to Update your stack when Necessary
 aws cloudformation update-stack --stack-name ChisomjudeProject --template-body file://servers.yml  --parameters file://servers.json --capabilities "CAPABILITY_IAM" "CAPABILITY_NAMED_IAM" --region=us-east-1
