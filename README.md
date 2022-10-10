@@ -2,7 +2,7 @@
 ## Project Title - Deploy a high-availability web app using CloudFormation
 
 This project contains Cloud Formation Templates to deploy Cloud infrastructure to AWS
-
+<img src="Architectural Diagram.png" width="800" height="400">
 
 #### Resources Deployed
  - VPC 
